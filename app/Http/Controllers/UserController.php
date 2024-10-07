@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Models\User;
+use GuzzleHttp\Client;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,6 +35,8 @@ class UserController extends Controller
     }
 
     public function store(StoreUserRequest $request): JsonResponse {
+        $this->validateZip($request->zip, $request->state, $request->city);
+
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
@@ -59,16 +62,14 @@ class UserController extends Controller
         }
     }
 
-    public function update(UpdateUserRequest $request, string $id): JsonResponse
-    {
-        dd(1);
+    public function update(UpdateUserRequest $request, string $id): JsonResponse {
         $user = User::find($id);
         
         if (!$user) return response()->json(['message' => 'User not found'], 404);
         
         $authenticatedUser = Auth::user();
 
-        if ($authenticatedUser->id !== $user->id && !$authenticatedUser->isAdmin()) {
+        if ($authenticatedUser->id !== $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         
@@ -77,11 +78,78 @@ class UserController extends Controller
         return response()->json($user, 200);
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+    public function destroy(string $id): JsonResponse {
+        $user = User::find($id);
+
+        if (!$user) return response()->json(['message' => 'User not found'], 404);
+
+        $authenticatedUser = Auth::user();
+
+        if ($authenticatedUser->id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $user->delete();
+
+        return response()->json(['message' => 'User deleted'], 200);
+    }
+
+    private function validateZip($cep, $state, $city): void {
+        $client = new Client();
+        $response = $client->request('GET', "https://viacep.com.br/ws/{$cep}/json/");
+    
+        if ($response->getStatusCode() !== 200) {
+            throw new \Exception('Invalid CEP format.');
+        }
+    
+        $data = json_decode($response->getBody(), true);
+    
+        if (isset($data['erro']) && $data['erro']) {
+            throw new \Exception('CEP not found.');
+        }
+    
+        $normalizedState = mb_strtolower(trim($state));
+        $normalizedCity = mb_strtolower(trim($this->removeAccents($city)));
+        
+        $responseState = mb_strtolower(trim($data['uf']));
+        $responseCity = mb_strtolower(trim($this->removeAccents($data['localidade'])));
+    
+        if ($responseState !== $normalizedState || $responseCity !== $normalizedCity) {
+            throw new \Exception('State or city does not match the provided CEP.');
+        }
+    }
+
+    private function removeAccents($string) {
+        $unwanted_array = [
+            'á', 'à', 'ã', 'â', 'ä', 'å',
+            'é', 'è', 'ê', 'ë',
+            'í', 'ì', 'î', 'ï',
+            'ó', 'ò', 'õ', 'ô', 'ö',
+            'ú', 'ù', 'û', 'ü',
+            'ç',
+            'Á', 'À', 'Ã', 'Â', 'Ä', 'Å',
+            'É', 'È', 'Ê', 'Ë',
+            'Í', 'Ì', 'Î', 'Ï',
+            'Ó', 'Ò', 'Õ', 'Ô', 'Ö',
+            'Ú', 'Ù', 'Û', 'Ü',
+            'Ç'
+        ];
+    
+        $replacement_array = [
+            'a', 'a', 'a', 'a', 'a', 'a',
+            'e', 'e', 'e', 'e',
+            'i', 'i', 'i', 'i',
+            'o', 'o', 'o', 'o', 'o',
+            'u', 'u', 'u', 'u',
+            'c',
+            'a', 'a', 'a', 'a', 'a', 'a',
+            'e', 'e', 'e', 'e',
+            'i', 'i', 'i', 'i',
+            'o', 'o', 'o', 'o', 'o',
+            'u', 'u', 'u', 'u',
+            'c'
+        ];
+    
+        return str_replace($unwanted_array, $replacement_array, $string);
     }
 }

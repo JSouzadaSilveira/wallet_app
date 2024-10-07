@@ -9,8 +9,7 @@ use App\Models\User;
 
 class AuthController extends Controller
 {
-    public function login(LoginRequest $request): JsonResponse
-    {
+    public function login(LoginRequest $request): JsonResponse {
         $credentials = $request->only('email', 'password');
 
         if (Auth::attempt($credentials)) {
@@ -26,10 +25,14 @@ class AuthController extends Controller
         return response()->json(['message' => 'Unauthenticated'], 401);
     }
 
-    public function logout() :JsonResponse {
-        $user = Auth::user();
-        $user->tokens()->delete();
+    public function logout(): JsonResponse {
+        if (Auth::check()) {
+            $user = Auth::user();
+            $user->tokens()->delete();
 
-        return response()->json(['message' => 'Logged out successfully'], 200);
+            return response()->json(['message' => 'Logged out successfully'], 200);
+        }
+
+        return response()->json(['message' => 'Unauthenticated'], 401);
     }
 }
